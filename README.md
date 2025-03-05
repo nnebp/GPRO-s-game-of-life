@@ -1,1 +1,1 @@
-# GPRO-s-game-of-life
+# GPRO's Game of Life
