@@ -4,6 +4,143 @@ import argparse
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from game_of_life import GameOfLife
 
+def generate_next_state_with_llm(game, model, tokenizer, device=None, max_new_tokens=600):
+    """
+    Generate the next state of the Game of Life using an LLM.
+    The LLM is prompted to reason through each cell and then provide the final board.
+    
+    Args:
+        game: The GameOfLife object containing the current board
+        model: The LLM model
+        tokenizer: The tokenizer for the model
+        device: The device to run on (optional)
+        max_new_tokens: Maximum number of tokens to generate
+        
+    Returns:
+        next_board: The predicted next board state (2D numpy array)
+    """
+    import numpy as np
+    
+    # Get the current board from the GameOfLife object
+    board = game.get_board()
+    rows, cols = board.shape
+    
+    # Convert board to string representation
+    board_str = "\n".join(" ".join(str(cell) for cell in row) for row in board)
+    
+    # Create detailed prompt with instructions for cell-by-cell reasoning
+    prompt = f"""You are tasked with predicting the next state of Conway's Game of Life.
+    
+The rules of Conway's Game of Life are:
+1. Any live cell with fewer than two live neighbors dies (underpopulation)
+2. Any live cell with two or three live neighbors survives
+3. Any live cell with more than three live neighbors dies (overpopulation)
+4. Any dead cell with exactly three live neighbors becomes a live cell (reproduction)
+
+Current board state:
+{board_str}
+
+For each cell, I want you to:
+1. Count how many live neighbors it has
+2. Apply the rules to determine if it will be alive (1) or dead (0) in the next state
+3. Clearly state your conclusion for that cell
+
+After reasoning through all cells, please output the complete next board state as a grid of 0s and 1s, with the exact same dimensions ({rows}x{cols}).
+
+Begin your analysis by examining each cell, and then end with a clearly formatted final board.
+
+Format your final answer as follows:
+FINAL BOARD:
+[board representation with only 0s and 1s, no other characters]
+END BOARD
+
+Now, proceed with your cell-by-cell analysis:
+"""
+
+    # Generate prediction from the model
+    inputs = tokenizer(prompt, return_tensors="pt")
+    if device:
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+    else:
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+    
+    output = model.generate(
+        **inputs, 
+        max_new_tokens=max_new_tokens, 
+        temperature=0.1,  # Lower temperature for more deterministic outputs
+        do_sample=True
+    )
+    
+    response = tokenizer.decode(output[0], skip_special_tokens=True)
+    
+    # Extract the final board from the response
+    try:
+        # Find the board between "FINAL BOARD:" and "END BOARD"
+        if "FINAL BOARD:" in response and "END BOARD" in response:
+            board_section = response.split("FINAL BOARD:")[1].split("END BOARD")[0].strip()
+            
+            # Parse the board
+            next_board = parse_board_from_text(board_section, rows, cols)
+            return next_board
+        else:
+            print("Couldn't find the expected markers in the response. Attempting to parse the end of the response...")
+            # Try to extract the last section that might contain the board
+            lines = response.strip().split('\n')
+            end_section = '\n'.join(lines[-rows-5:]) if len(lines) > rows else response
+            next_board = parse_board_from_text(end_section, rows, cols)
+            return next_board
+    except (IndexError, ValueError) as e:
+        print(f"Error extracting board from response: {e}")
+        print("Full response from model:")
+        print(response)
+        # Return a copy of the original board as a fallback
+        return board.copy()
+
+def parse_board_from_text(text, expected_rows, expected_cols):
+    """
+    Parse a board from text format into a 2D numpy array.
+    This is robust to various delimiters and whitespace.
+    
+    Args:
+        text: String representation of the board
+        expected_rows: Expected number of rows
+        expected_cols: Expected number of columns
+        
+    Returns:
+        board: 2D numpy array representing the board
+    """
+    import numpy as np
+    import re
+    
+    # Remove any non-relevant characters, keeping only 0s, 1s, and whitespace
+    clean_text = re.sub(r'[^01\s]', '', text)
+    
+    # Split into rows
+    rows = [row for row in clean_text.strip().split('\n') if row.strip()]
+    
+    # Create the board
+    board = np.zeros((expected_rows, expected_cols), dtype=int)
+    
+    # Try to parse the text into the board
+    for i, row_text in enumerate(rows):
+        if i >= expected_rows:
+            break
+            
+        # Extract just the 0s and 1s
+        digits = re.findall(r'[01]', row_text)
+        
+        for j, digit in enumerate(digits):
+            if j >= expected_cols:
+                break
+            board[i, j] = int(digit)
+    
+    # Check if the board has the expected dimensions
+    if len(rows) != expected_rows or any(len(re.findall(r'[01]', row)) != expected_cols for row in rows[:expected_rows]):
+        print(f"Warning: Parsed board dimensions ({len(rows)}x{len(re.findall(r'[01]', rows[0]) if rows else 0)}) "
+              f"don't match expected dimensions ({expected_rows}x{expected_cols})")
+    
+    return board
+
 def board_to_text(board):
     """Convert a Game of Life board to a text representation."""
     rows, cols = board.shape
@@ -73,7 +210,8 @@ def parse_board_from_output(output_text, shape):
     # If we still don't have enough digits, return None
     return None
 
-def generate_next_state_with_llm(game, model, tokenizer, device='cuda'):
+#TODO: delete this
+def generate_next_state_with_llm_old(game, model, tokenizer, device='cuda'):
     """Use an LLM to predict the next state of the Game of Life board."""
     current_board = game.get_board()
     board_text = board_to_text(current_board)
@@ -226,12 +364,12 @@ def main():
     correct_game = GameOfLife(board=correct_next_state)
     
     # Display the predicted next state
-    print("Predicted next state:")
-    predicted_game.display()
+    #print("Predicted next state:")
+    #predicted_game.display()
     
     # Display the correct next state
-    print("Correct next state (using built-in rules):")
-    correct_game.display()
+    #print("Correct next state (using built-in rules):")
+    #correct_game.display()
     
     # Compare the results
     print("Comparing results...")
@@ -243,6 +381,8 @@ def main():
     accuracy = (total_cells - differences) / total_cells * 100
     
     print(f"Accuracy: {accuracy:.2f}% ({total_cells - differences}/{total_cells} cells correct)")
+
+
 
 if __name__ == "__main__":
     main()
