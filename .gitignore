@@ -1,3 +1,8 @@
+#my stuff
+saved_data/
+gsm8k_model/
+tiny*/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
