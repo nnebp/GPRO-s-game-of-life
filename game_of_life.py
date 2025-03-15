@@ -4,6 +4,15 @@ from matplotlib.colors import ListedColormap
 from IPython.display import clear_output
 import time
 
+XML_COT_FORMAT = """\
+<reasoning>
+{reasoning}
+</reasoning>
+<answer>
+{answer}
+</answer>
+"""
+
 class GameOfLife:
     def __init__(self, board=None, size=(20, 20)):
         """
@@ -17,6 +26,9 @@ class GameOfLife:
             self.board = np.array(board, dtype=int)
         else:
             self.board = np.zeros(size, dtype=int)
+    def __str__(self):
+        # Convert the board to a string for printing like 0,1,1,0,1 with a new line for each row
+        return "\n".join([",".join(map(str, row)) for row in self.board])
     
     def get_board(self):
         """Return the current board state."""
@@ -47,7 +59,112 @@ class GameOfLife:
                 count += self.board[i, j]
         
         return count
+    def next_with_explanation(self):
+        """
+        Generate the next board state according to Conway's Game of Life rules
+        and return a detailed explanation of why each cell changed or remained the same.
+        
+        Returns:
+        - explanation: A string explaining the state change for each cell
+        """
+
+        rows, cols = self.board.shape
+        next_board = np.zeros_like(self.board)
+        explanation_lines = []
+        
+        # Using triple quotes with no indentation for the intro text
+        intro_text = """Alright, let's break down this task step by step.
+
+I'm given a {}x{} board representing the current state of Conway's Game of Life, where 1 represents a live cell and 0 represents a dead cell.
+I need to determine the next state of the board based on the rules provided.
+For each cell, I'll:
+1. Count its live neighbors
+2. Apply the rules to determine if it will be alive or dead in the next state
+3. State my conclusion
+
+Now, I'll go through each cell one by one, labeling them by their coordinates (row, column), starting from (0, 0) at the top-left.
+For each cell, the neighbors are the 8 adjacent cells in all directions (horizontal, vertical, and diagonal). I'll need to be careful at the edges of the board, as cells at the edges have fewer neighbors.
+Let's start:
+""".format(rows, cols)
     
+        explanation_lines.append(intro_text)
+        
+        for row in range(rows):
+            for col in range(cols):
+                # Get the current state and count of neighbors
+                neighbors = self.count_neighbors(row, col)
+                current_cell = self.board[row, col]
+                
+                # Get the list of neighbor coordinates and their values
+                neighbor_coords = []
+                neighbor_values = []
+                
+                for i in range(max(0, row-1), min(rows, row+2)):
+                    for j in range(max(0, col-1), min(cols, col+2)):
+                        # Skip the cell itself
+                        if i == row and j == col:
+                            continue
+                        neighbor_coords.append((i, j))
+                        neighbor_values.append(self.board[i, j])
+                
+                # Build the neighbor description string
+                neighbor_str = ", ".join([f"({i},{j})" for i, j in neighbor_coords])
+                
+                # Build the neighbor values calculation string
+                neighbor_calc = " + ".join([str(val) for val in neighbor_values])
+                if neighbor_calc:  # Ensure there's at least one neighbor
+                    neighbor_calc += f" = {neighbors}"
+                else:
+                    neighbor_calc = "0"
+                
+                # Cell status line
+                cell_status = f"Cell ({row},{col}) - Currently {'alive (1)' if current_cell == 1 else 'dead (0)'}"
+                
+                # Neighbors line
+                neighbors_line = f"Neighbors: {neighbor_str}"
+                
+                # Live neighbors calculation line
+                live_neighbors_line = f"Live neighbors: {neighbor_calc}"
+                
+                # Determine the new state and explanation
+                if current_cell == 1:  # Live cell
+                    if neighbors < 2:
+                        next_board[row, col] = 0  # Dies
+                        rule_applied = "This live cell has fewer than 2 live neighbors, so it dies by underpopulation."
+                        conclusion = f"Conclusion: Cell ({row},{col}) becomes dead (0)."
+                    elif neighbors <= 3:
+                        next_board[row, col] = 1  # Stays alive
+                        rule_applied = f"This live cell has {neighbors} live neighbors (2 or 3), so it stays alive."
+                        conclusion = f"Conclusion: Cell ({row},{col}) remains alive (1)."
+                    else:
+                        next_board[row, col] = 0  # Dies
+                        rule_applied = f"This live cell has more than 3 live neighbors ({neighbors}), so it dies by overpopulation."
+                        conclusion = f"Conclusion: Cell ({row},{col}) becomes dead (0)."
+                else:  # Dead cell
+                    if neighbors == 3:
+                        next_board[row, col] = 1  # Becomes alive
+                        rule_applied = "This dead cell has exactly 3 live neighbors, so it becomes alive by reproduction."
+                        conclusion = f"Conclusion: Cell ({row},{col}) becomes alive (1)."
+                    else:
+                        next_board[row, col] = 0  # Stays dead
+                        rule_applied = f"This dead cell has {neighbors} live neighbors (not exactly 3), so it remains dead."
+                        conclusion = f"Conclusion: Cell ({row},{col}) remains dead (0)."
+                
+                # Combine all lines for this cell
+                cell_explanation = f"{cell_status}\n{neighbors_line}\n{live_neighbors_line}\n{rule_applied}\n{conclusion}"
+                explanation_lines.append(cell_explanation)
+            
+        # Update the board
+        self.board = next_board
+        
+        # Compile the explanation
+        explanation = "\n\n".join(explanation_lines)
+        
+        return XML_COT_FORMAT.format(
+            reasoning=explanation,
+            answer=str(self)
+        )
+
     def next(self):
         """Generate and return the next board state according to Conway's Game of Life rules."""
         rows, cols = self.board.shape

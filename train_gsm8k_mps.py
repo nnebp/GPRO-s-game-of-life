@@ -10,6 +10,7 @@ import re
 import argparse
 import torch
 import numpy as np
+from peft import LoraConfig
 from tqdm import tqdm
 from datasets import load_dataset, Dataset
 from transformers import (
@@ -124,7 +125,15 @@ def train_with_grpo(args, dataset):
     
     # Set env var to tell PyTorch about MPS
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-    
+
+    peft_config = LoraConfig(
+        r=16,
+        lora_alpha=64,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj", "gate_proj"],
+        task_type="CAUSAL_LM",
+        lora_dropout=0.05,
+    )
+
     # Configure tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     if tokenizer.pad_token is None:
@@ -173,6 +182,7 @@ def train_with_grpo(args, dataset):
             args=training_args,
             train_dataset=dataset,
             tokenizer=tokenizer,
+            peft_config=peft_config,
         )
         
         # Start training
