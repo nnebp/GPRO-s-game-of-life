@@ -1,7 +1,9 @@
-#my stuff
+#project spefic
 saved_data/
 gsm8k_model/
 tiny*/
+data/
+wandb/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
