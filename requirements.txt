@@ -1,0 +1,9 @@
+numpy>=1.20.0
+matplotlib>=3.5.0
+torch>=2.0.0
+transformers>=4.30.0
+datasets>=2.10.0
+tqdm>=4.64.0
+peft>=0.4.0
+trl>=0.7.2
+ipython>=8.0.0
